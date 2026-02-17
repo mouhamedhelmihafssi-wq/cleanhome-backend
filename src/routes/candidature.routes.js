@@ -3,6 +3,54 @@ const router = express.Router();
 const { authenticateToken } = require('../middlewares/auth.middleware');
 const db = require('../config/database');
 
+// Lister les candidatures (selon le type d'utilisateur)
+router.get('/', authenticateToken, async (req, res) => {
+  try {
+    const user_id = req.user.id;
+    const user_type = req.user.type;
+
+    let results;
+    if (user_type === 'nettoyeur') {
+      // Pour un nettoyeur : afficher les réservations disponibles (en_attente)
+      [results] = await db.query(
+        `SELECT r.*, c.nom as client_nom, c.prenom as client_prenom
+         FROM reservations r
+         JOIN clients c ON r.client_id = c.id
+         WHERE r.statut = 'en_attente'
+         AND r.id NOT IN (
+           SELECT reservation_id FROM candidatures WHERE nettoyeur_id = ?
+         )
+         ORDER BY r.date_creation DESC`,
+        [user_id]
+      );
+    } else {
+      // Pour un client : afficher les candidatures reçues pour ses réservations
+      [results] = await db.query(
+        `SELECT c.*, n.nom, n.prenom, n.telephone, n.email as nettoyeur_email,
+                n.photo_profil, n.specialites, n.note_moyenne,
+                r.type_service, r.date_service
+         FROM candidatures c
+         JOIN nettoyeurs n ON c.nettoyeur_id = n.id
+         JOIN reservations r ON c.reservation_id = r.id
+         WHERE r.client_id = ?
+         ORDER BY c.date_candidature DESC`,
+        [user_id]
+      );
+    }
+
+    res.status(200).json({
+      success: true,
+      data: results
+    });
+  } catch (error) {
+    console.error('Erreur liste candidatures:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la récupération des candidatures'
+    });
+  }
+});
+
 // Créer une candidature (nettoyeur postule)
 router.post('/', authenticateToken, async (req, res) => {
   try {

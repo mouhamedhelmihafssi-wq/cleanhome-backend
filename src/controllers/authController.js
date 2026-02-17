@@ -222,6 +222,151 @@ exports.login = async (req, res) => {
   }
 };
 
+// Inscription UNIFIÉE (route unique)
+exports.register = async (req, res) => {
+  try {
+    const { nom, prenom, email, telephone, motDePasse, mot_de_passe, role } = req.body;
+    const password = motDePasse || mot_de_passe;
+
+    if (!nom || !prenom || !email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nom, prénom, email et mot de passe sont requis'
+      });
+    }
+
+    const type = role === 'nettoyeur' ? 'nettoyeur' : 'client';
+    const table = type === 'client' ? 'clients' : 'nettoyeurs';
+
+    // Vérifier si l'email existe déjà
+    const [existing] = await db.query(
+      `SELECT id FROM ${table} WHERE email = ?`,
+      [email]
+    );
+
+    if (existing.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cet email est déjà utilisé'
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    let result;
+    if (type === 'client') {
+      [result] = await db.query(
+        'INSERT INTO clients (nom, prenom, email, telephone, mot_de_passe) VALUES (?, ?, ?, ?, ?)',
+        [nom, prenom, email, telephone, hashedPassword]
+      );
+    } else {
+      [result] = await db.query(
+        'INSERT INTO nettoyeurs (nom, prenom, email, telephone, mot_de_passe, statut) VALUES (?, ?, ?, ?, ?, ?)',
+        [nom, prenom, email, telephone, hashedPassword, 'en_attente']
+      );
+    }
+
+    const token = generateToken({ id: result.insertId, type, email });
+    const refreshToken = generateRefreshToken({ id: result.insertId, type });
+
+    res.status(201).json({
+      success: true,
+      message: 'Inscription réussie',
+      token,
+      refreshToken,
+      user: {
+        id: result.insertId,
+        nom,
+        prenom,
+        email,
+        telephone,
+        type,
+        role: type
+      },
+      data: {
+        user: {
+          id: result.insertId,
+          nom,
+          prenom,
+          email,
+          telephone,
+          type,
+          role: type
+        },
+        token,
+        refreshToken
+      }
+    });
+  } catch (error) {
+    console.error('Erreur inscription:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de l\'inscription',
+      error: error.message
+    });
+  }
+};
+
+// Mise à jour du profil
+exports.updateProfile = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { nom, prenom, email, telephone } = req.body;
+    const { type } = req.user;
+
+    const table = type === 'client' ? 'clients' : type === 'nettoyeur' ? 'nettoyeurs' : 'admins';
+
+    // Vérifier que l'utilisateur modifie son propre profil
+    if (parseInt(id) !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Non autorisé'
+      });
+    }
+
+    // Vérifier si l'email est déjà pris par un autre utilisateur
+    if (email) {
+      const [existing] = await db.query(
+        `SELECT id FROM ${table} WHERE email = ? AND id != ?`,
+        [email, id]
+      );
+      if (existing.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cet email est déjà utilisé'
+        });
+      }
+    }
+
+    await db.query(
+      `UPDATE ${table} SET nom = ?, prenom = ?, email = ?, telephone = ? WHERE id = ?`,
+      [nom, prenom, email, telephone, id]
+    );
+
+    const [users] = await db.query(
+      `SELECT * FROM ${table} WHERE id = ?`,
+      [id]
+    );
+
+    const user = users[0];
+    delete user.mot_de_passe;
+
+    res.json({
+      success: true,
+      message: 'Profil mis à jour avec succès',
+      user: { ...user, type, role: type },
+      data: { ...user, type, role: type }
+    });
+  } catch (error) {
+    console.error('Erreur mise à jour profil:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la mise à jour du profil',
+      error: error.message
+    });
+  }
+};
+
 // Récupérer l'utilisateur connecté
 exports.getCurrentUser = async (req, res) => {
   try {

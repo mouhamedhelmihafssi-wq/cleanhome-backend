@@ -16,6 +16,32 @@ router.put('/:id/cancel', reservationController.cancelReservation);
 router.get('/available', reservationController.getAvailableReservations);
 router.get('/assigned', reservationController.getMyAssignedReservations);
 
+// GET /api/reservations/nettoyeur — missions du nettoyeur connecté
+router.get('/nettoyeur', async (req, res) => {
+  try {
+    const nettoyeur_id = req.user.id;
+    const [missions] = await db.query(
+      `SELECT r.*, c.nom as client_nom, c.prenom as client_prenom,
+              c.telephone as client_telephone, c.email as client_email
+       FROM reservations r
+       JOIN clients c ON r.client_id = c.id
+       WHERE r.nettoyeur_id = ?
+       ORDER BY r.date_service DESC`,
+      [nettoyeur_id]
+    );
+    res.status(200).json({
+      success: true,
+      data: missions
+    });
+  } catch (error) {
+    console.error('Erreur récupération missions nettoyeur:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la récupération des missions'
+    });
+  }
+});
+
 // Voir MES réservations (client)
 router.get('/mes-reservations', async (req, res) => {
   try {
@@ -76,6 +102,32 @@ router.get('/mes-missions', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la récupération des missions'
+    });
+  }
+});
+
+// GET /api/reservations — réservations du client connecté
+router.get('/', async (req, res) => {
+  try {
+    const client_id = req.user.id;
+    const [reservations] = await db.query(
+      `SELECT r.*, n.nom as nettoyeur_nom, n.prenom as nettoyeur_prenom,
+              n.telephone as nettoyeur_telephone, n.photo_profil as nettoyeur_photo
+       FROM reservations r
+       LEFT JOIN nettoyeurs n ON r.nettoyeur_id = n.id
+       WHERE r.client_id = ?
+       ORDER BY r.date_service DESC`,
+      [client_id]
+    );
+    res.status(200).json({
+      success: true,
+      data: reservations
+    });
+  } catch (error) {
+    console.error('Erreur récupération réservations client:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la récupération des réservations'
     });
   }
 });
