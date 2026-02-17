@@ -4,7 +4,21 @@ const reservationController = require('../controllers/reservationController');
 const { authenticateToken } = require('../middlewares/auth.middleware');
 const db = require('../config/database');
 
-// Toutes les routes nécessitent une authentification
+// Types de nettoyage disponibles (pas besoin d'auth)
+router.get('/types', (req, res) => {
+  res.json({
+    success: true,
+    data: [
+      { value: 'maison', label: 'Maison', description: 'Nettoyage de maison ou appartement' },
+      { value: 'voiture', label: 'Voiture', description: 'Nettoyage de véhicule' },
+      { value: 'batiment', label: 'Bâtiment', description: 'Nettoyage de bâtiment commercial' },
+      { value: 'bureau', label: 'Bureau', description: 'Nettoyage de bureau' },
+      { value: 'jardin', label: 'Jardin', description: 'Entretien de jardin' },
+    ]
+  });
+});
+
+// Toutes les routes suivantes nécessitent une authentification
 router.use(authenticateToken);
 
 // Routes CLIENT
@@ -220,5 +234,4 @@ router.put('/:id/annuler', async (req, res) => {
   }
 });
 
-module.exports = router;
 module.exports = router;

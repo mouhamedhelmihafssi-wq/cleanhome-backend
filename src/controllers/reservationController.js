@@ -20,26 +20,84 @@ exports.createReservation = async (req, res) => {
       date_service,
       heure_debut,
       duree_estimee,
-      prix_propose
+      prix_propose,
+      titre,
+      details
     } = req.body;
 
     const client_id = req.user.id;
 
     // Insérer la réservation
     const [result] = await db.query(
-      `INSERT INTO reservations 
-      (client_id, type_service, description, adresse_service, ville, code_postal, 
-       date_service, heure_debut, duree_estimee, prix_propose, statut) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO reservations
+      (client_id, type_service, description, adresse_service, ville, code_postal,
+       date_service, heure_debut, duree_estimee, prix_propose, titre, statut)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [client_id, type_service, description, adresse_service, ville, code_postal,
-       date_service, heure_debut, duree_estimee, prix_propose, 'en_attente']
+       date_service, heure_debut, duree_estimee, prix_propose, titre, 'en_attente']
     );
+
+    const reservationId = result.insertId;
+
+    // Insérer les détails spécifiques au type de nettoyage
+    if (details && type_service) {
+      try {
+        switch (type_service) {
+          case 'maison':
+            await db.query(
+              `INSERT INTO details_maison (reservation_id, nombre_chambres, nombre_etages, nombre_salles_bain, type_service)
+               VALUES (?, ?, ?, ?, ?)`,
+              [reservationId, details.nombre_chambres, details.nombre_etages,
+               details.nombre_salles_bain, details.type_service_detail]
+            );
+            break;
+
+          case 'voiture':
+            await db.query(
+              `INSERT INTO details_voiture (reservation_id, nom_voiture, type_voiture, zone_nettoyage)
+               VALUES (?, ?, ?, ?)`,
+              [reservationId, details.nom_voiture, details.type_voiture, details.zone_nettoyage]
+            );
+            break;
+
+          case 'batiment':
+            await db.query(
+              `INSERT INTO details_batiment (reservation_id, nombre_etages, avec_ascenseur)
+               VALUES (?, ?, ?)`,
+              [reservationId, details.nombre_etages, details.avec_ascenseur ? 1 : 0]
+            );
+            break;
+
+          case 'bureau':
+            await db.query(
+              `INSERT INTO details_bureau (reservation_id, surface, avec_cuisine, avec_toilette, type_service)
+               VALUES (?, ?, ?, ?, ?)`,
+              [reservationId, details.surface, details.avec_cuisine ? 1 : 0,
+               details.avec_toilette ? 1 : 0, details.type_service_detail]
+            );
+            break;
+
+          case 'jardin':
+            await db.query(
+              `INSERT INTO details_jardin (reservation_id, surface, avec_gazon, avec_arbres, avec_piscine, type_service)
+               VALUES (?, ?, ?, ?, ?, ?)`,
+              [reservationId, details.surface, details.avec_gazon ? 1 : 0,
+               details.avec_arbres ? 1 : 0, details.avec_piscine ? 1 : 0,
+               details.type_service_detail]
+            );
+            break;
+        }
+      } catch (detailError) {
+        console.error('Erreur insertion détails:', detailError);
+        // La réservation est déjà créée, on continue
+      }
+    }
 
     res.status(201).json({
       success: true,
       message: 'Réservation créée avec succès',
       data: {
-        id: result.insertId,
+        id: reservationId,
         client_id,
         type_service,
         description,
@@ -50,6 +108,7 @@ exports.createReservation = async (req, res) => {
         heure_debut,
         duree_estimee,
         prix_propose,
+        titre,
         statut: 'en_attente'
       }
     });
@@ -75,8 +134,8 @@ exports.getMyReservations = async (req, res) => {
     }
 
     const [reservations] = await db.query(
-      `SELECT r.*, 
-              n.nom as nettoyeur_nom, 
+      `SELECT r.*,
+              n.nom as nettoyeur_nom,
               n.prenom as nettoyeur_prenom,
               n.telephone as nettoyeur_telephone
        FROM reservations r
@@ -107,11 +166,11 @@ exports.getReservationById = async (req, res) => {
     const { id } = req.params;
 
     const [reservations] = await db.query(
-      `SELECT r.*, 
-              c.nom as client_nom, 
+      `SELECT r.*,
+              c.nom as client_nom,
               c.prenom as client_prenom,
               c.telephone as client_telephone,
-              n.nom as nettoyeur_nom, 
+              n.nom as nettoyeur_nom,
               n.prenom as nettoyeur_prenom,
               n.telephone as nettoyeur_telephone
        FROM reservations r
@@ -227,12 +286,12 @@ exports.getAvailableReservations = async (req, res) => {
     }
 
     const [reservations] = await db.query(
-      `SELECT r.*, 
-              c.nom as client_nom, 
+      `SELECT r.*,
+              c.nom as client_nom,
               c.prenom as client_prenom
        FROM reservations r
        JOIN clients c ON r.client_id = c.id
-       WHERE r.statut = 'en_attente' 
+       WHERE r.statut = 'en_attente'
        AND r.nettoyeur_id IS NULL
        AND r.date_service >= CURDATE()
        ORDER BY r.date_creation DESC`
@@ -264,8 +323,8 @@ exports.getMyAssignedReservations = async (req, res) => {
     }
 
     const [reservations] = await db.query(
-      `SELECT r.*, 
-              c.nom as client_nom, 
+      `SELECT r.*,
+              c.nom as client_nom,
               c.prenom as client_prenom,
               c.telephone as client_telephone
        FROM reservations r
